@@ -4,13 +4,13 @@ namespace OrderFlow.ConsoleApp.Models;
 public sealed class Order
 {
     public const int MaxCustomerNameLength = 80;
-    public const decimal VatRate = 0.21m;                                       // ①
+    public const decimal VatRate = 0.21m;
 
-    private readonly List<OrderItem> _items = new();                            // ②
+    private readonly List<OrderItem> _items = [];                               // ①
 
     public Order(string customerName)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(customerName);                // ③
+        ArgumentException.ThrowIfNullOrWhiteSpace(customerName);
         string trimmedName = customerName.Trim();
         ArgumentOutOfRangeException.ThrowIfGreaterThan(
             trimmedName.Length, MaxCustomerNameLength, nameof(customerName));
@@ -20,31 +20,19 @@ public sealed class Order
 
     public string CustomerName { get; }
 
-    public OrderStatus Status { get; private set; } = OrderStatus.Draft;        // ④
+    public OrderStatus Status { get; private set; } = OrderStatus.Draft;
 
-    public IReadOnlyList<OrderItem> Items => _items.AsReadOnly();               // ⑤
+    public IReadOnlyList<OrderItem> Items => _items.AsReadOnly();
 
-    public int TotalQuantity
-    {
-        get
-        {
-            int total = 0;
-            foreach (OrderItem item in _items)
-            {
-                total += item.Quantity;
-            }
+    public int TotalQuantity => _items.Sum(item => item.Quantity);              // ②
 
-            return total;
-        }
-    }
-
-    public void AddItem(Product product, int quantity)                          // ⑥
+    public void AddItem(Product product, int quantity)
     {
         EnsureDraft("add an item");
-        _items.Add(new OrderItem(product, quantity));                           // ⑦
+        _items.Add(new OrderItem(product, quantity));
     }
 
-    public void Submit()                                                        // ⑧
+    public void Submit()
     {
         EnsureDraft("submit it");
         if (_items.Count == 0)
@@ -56,23 +44,14 @@ public sealed class Order
         Status = OrderStatus.Submitted;
     }
 
-    public decimal CalculateSubtotal()
-    {
-        decimal subtotal = 0m;
-        foreach (OrderItem item in _items)
-        {
-            subtotal += item.Subtotal;
-        }
+    public decimal CalculateSubtotal() => _items.Sum(item => item.Subtotal);    // ③
 
-        return subtotal;
-    }
-
-    public decimal CalculateVat() =>                                            // ⑨
+    public decimal CalculateVat() =>
         Math.Round(CalculateSubtotal() * VatRate, 2, MidpointRounding.AwayFromZero);
 
     public decimal CalculateTotal() => CalculateSubtotal() + CalculateVat();
 
-    private void EnsureDraft(string action)                                     // ⑩
+    private void EnsureDraft(string action)
     {
         if (Status != OrderStatus.Draft)
         {
