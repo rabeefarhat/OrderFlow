@@ -69,3 +69,5 @@ if (!priceIsValid || !quantityIsValid)                               // ⑰
 {
     Console.WriteLine($"Rejected line: price {suspiciousPrice.ToString("C", euro)}, quantity {suspiciousQuantity} (price must not be negative, quantity must be at least 1).");
 }
+
+Console.ReadLine(); 
