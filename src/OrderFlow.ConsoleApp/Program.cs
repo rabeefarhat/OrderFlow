@@ -1,36 +1,34 @@
 ﻿// src/OrderFlow.ConsoleApp/Program.cs
-// OrderFlow — P01.3: approval rules, a looping menu and reusable methods.
+// OrderFlow — P01.4: Product, OrderItem and Order classes behind the menu.
 
 using System.Globalization;
+using OrderFlow.ConsoleApp.Models;                                            // ①
 
 // ── Settings: every business number has a name ──────────────────
-const string CultureName = "nl-BE";                                  // ①
-const decimal VatRate = 0.21m;
+const string CultureName = "nl-BE";
 const decimal TeamLeadThreshold = 250m;
 const decimal ManagerThreshold = 1_000m;
 const int BulkQuantityThreshold = 50;
-const decimal MaxUnitPrice = 100_000m;
-const int MaxQuantity = 10_000;
-const int MaxProductNameLength = 40;
+const string WalkInCustomer = "Walk-in customer";                             // ②
 
 // ── The program itself ──────────────────────────────────────────
-PrintWelcome();                                                      // ②
+PrintWelcome();
 RunMenu();
 Console.WriteLine("Goodbye from OrderFlow.");
 
 // ── Menu ────────────────────────────────────────────────────────
 static void RunMenu()
 {
-    while (true)                                                     // ③
+    while (true)
     {
         PrintMenu();
         string? line = Console.ReadLine();
-        if (line is null)                                            // ④
+        if (line is null)
         {
             return;
         }
 
-        switch (line.Trim())                                         // ⑤
+        switch (line.Trim())
         {
             case "1":
                 PriceNewOrderLine();
@@ -44,8 +42,17 @@ static void RunMenu()
             case "4":
                 ShowNumericTraps();
                 break;
+            case "5":
+                ShowMultiLineOrder();                                         // ③
+                break;
+            case "6":
+                ShowObjectRules();
+                break;
+            case "7":
+                ShowReferencesAndValues();
+                break;
             case "0":
-                return;                                              // ⑥
+                return;
             default:
                 Console.WriteLine($"  Rejected: '{line.Trim()}' is not a menu option. Type one of the numbers above.");
                 break;
@@ -57,17 +64,20 @@ static void RunMenu()
 
 static void PrintMenu()
 {
-    string[] options =                                               // ⑦
+    string[] options =
     {
         "1  Price a new order line",
         "2  Show the sample orders",
         "3  Show a quantity table (approval boundaries)",
         "4  Show the numeric traps (decimal vs double)",
+        "5  Build a multi-line order",
+        "6  Try to break the order rules",
+        "7  References vs values",
         "0  Exit",
     };
 
     Console.WriteLine("Menu");
-    foreach (string option in options)                               // ⑧
+    foreach (string option in options)
     {
         Console.WriteLine($"  {option}");
     }
@@ -80,10 +90,10 @@ static void PriceNewOrderLine()
 {
     Console.WriteLine("Press Enter on an empty line at any question to cancel.");
 
-    if (ReadProductName() is not string productName)                 // ⑨
+    if (ReadProductName() is not string productName)
     {
         PrintCancelled();
-        return;                                                      // ⑩
+        return;
     }
 
     if (ReadUnitPrice() is not decimal unitPrice)
@@ -98,7 +108,11 @@ static void PriceNewOrderLine()
         return;
     }
 
-    PrintOrderLine(productName, unitPrice, quantity);                // ⑪
+    // The input was validated above, so these constructors will not throw.     ④
+    Product product = new(productName, unitPrice, stockQuantity: 0);
+    Order order = new(WalkInCustomer);
+    order.AddItem(product, quantity);
+    PrintOrder(order);
 }
 
 static void PrintCancelled() => Console.WriteLine("Cancelled - nothing was priced.");
@@ -109,7 +123,7 @@ static string? ReadProductName()
     while (true)
     {
         Console.Write("Product name: ");
-        string? input = Console.ReadLine()?.Trim();                  // ⑫
+        string? input = Console.ReadLine()?.Trim();
         if (string.IsNullOrEmpty(input))
         {
             return null;
@@ -128,7 +142,7 @@ static string? ReadProductName()
 static decimal? ReadUnitPrice()
 {
     CultureInfo belgian = CultureInfo.GetCultureInfo(CultureName);
-    NumberStyles style = NumberStyles.AllowLeadingSign | NumberStyles.AllowDecimalPoint;    // ⑬
+    NumberStyles style = NumberStyles.AllowLeadingSign | NumberStyles.AllowDecimalPoint;
 
     while (true)
     {
@@ -139,10 +153,10 @@ static decimal? ReadUnitPrice()
             return null;
         }
 
-        if (!decimal.TryParse(input, style, belgian, out decimal price))                    // ⑭
+        if (!decimal.TryParse(input, style, belgian, out decimal price))
         {
             Console.WriteLine($"  Rejected: '{input}' is not a price. Use digits and one comma, like 9,99.");
-            continue;                                                // ⑮
+            continue;
         }
 
         string? error = ValidateUnitPrice(price);
@@ -182,30 +196,30 @@ static int? ReadQuantity()
     }
 }
 
-// ── Rules: pure decisions, no Console ───────────────────────────
-static string? ValidateProductName(string name) => name switch     // ⑯
+// ── Boundary rules: friendly messages, limits owned by the classes ─
+static string? ValidateProductName(string name) => name switch               // ⑤
 {
-    { Length: < 2 } => "A product name needs at least 2 characters.",
-    { Length: > MaxProductNameLength } => $"A product name can be at most {MaxProductNameLength} characters.",
+    { Length: < Product.MinNameLength } => $"A product name needs at least {Product.MinNameLength} characters.",
+    { Length: > Product.MaxNameLength } => $"A product name can be at most {Product.MaxNameLength} characters.",
     _ => null,
 };
 
-static string? ValidateUnitPrice(decimal price) => price switch     // ⑰
+static string? ValidateUnitPrice(decimal price) => price switch
 {
     < 0m => "A price can't be negative.",
-    > MaxUnitPrice => $"A price above {Money(MaxUnitPrice)} looks like a typo.",
+    > Product.MaxUnitPrice => $"A price above {Money(Product.MaxUnitPrice)} looks like a typo.",
     _ when price != decimal.Round(price, 2) => "A price can have at most two decimals (whole cents).",
     _ => null,
 };
 
 static string? ValidateQuantity(int quantity) => quantity switch
 {
-    < 1 => "Quantity must be at least 1.",
-    > MaxQuantity => $"Quantity can be at most {MaxQuantity}.",
+    < OrderItem.MinQuantity => $"Quantity must be at least {OrderItem.MinQuantity}.",
+    > OrderItem.MaxQuantity => $"Quantity can be at most {OrderItem.MaxQuantity}.",
     _ => null,
 };
 
-static string DecideApproval(decimal total, int quantity) => (total, quantity) switch   // ⑱
+static string DecideApproval(decimal total, int quantity) => (total, quantity) switch
 {
     ( >= ManagerThreshold, _) => "Manager review required",
     (_, > BulkQuantityThreshold) => "Warehouse check required (bulk quantity)",
@@ -213,55 +227,60 @@ static string DecideApproval(decimal total, int quantity) => (total, quantity) s
     _ => "Auto-approved",
 };
 
-// ── Calculations ────────────────────────────────────────────────
-static decimal CalculateSubtotal(decimal unitPrice, int quantity) => unitPrice * quantity;
-
-static decimal CalculateVat(decimal subtotal) =>
-    Math.Round(subtotal * VatRate, 2, MidpointRounding.AwayFromZero);
-
 static string Money(decimal amount) =>
-    amount.ToString("C", CultureInfo.GetCultureInfo(CultureName));  // ⑲
+    amount.ToString("C", CultureInfo.GetCultureInfo(CultureName));
 
 // ── Output ──────────────────────────────────────────────────────
 static void PrintWelcome()
 {
     Console.WriteLine("Welcome to OrderFlow!");
     Console.WriteLine("Order management, built one lesson at a time.");
-    Console.WriteLine("Version: L01 Module 3");
+    Console.WriteLine("Version: L01 Module 4");
     Console.WriteLine();
 }
 
-static void PrintOrderLine(string productName, decimal unitPrice, int quantity)
+static void PrintOrder(Order order)                                           // ⑥
 {
-    decimal subtotal = CalculateSubtotal(unitPrice, quantity);
-    decimal vat = CalculateVat(subtotal);
-    decimal total = subtotal + vat;
+    Console.WriteLine($"Order for {order.CustomerName} - status {order.Status}");
+    foreach (OrderItem item in order.Items)
+    {
+        Console.WriteLine($"  {item.Quantity,5} x {item.ProductName,-20} @ {Money(item.UnitPrice),12} = {Money(item.Subtotal),12}");
+    }
 
-    Console.WriteLine($"{quantity} x {productName} @ {Money(unitPrice)} = {Money(subtotal)}");
-    Console.WriteLine($"   VAT: {Money(vat)}   Total incl. VAT: {Money(total)}");
-    Console.WriteLine($"   Approval: {DecideApproval(total, quantity)}");
+    decimal total = order.CalculateTotal();
+    Console.WriteLine($"  Subtotal: {Money(order.CalculateSubtotal())}   VAT: {Money(order.CalculateVat())}   Total incl. VAT: {Money(total)}");
+    Console.WriteLine($"  Approval: {DecideApproval(total, order.TotalQuantity)}");
 }
 
-static void ShowSampleOrders()
+static void PrintSingleLineOrder(string productName, decimal unitPrice, int quantity)
 {
-    PrintOrderLine("USB-C cable", 9.99m, 3);                         // ⑳
-    PrintOrderLine("Logo sticker", 0.10m, 3);
-    PrintOrderLine("Notebook A5", 19.95m, 4);
-    PrintOrderLine("Desk lamp", 49.50m, 5);
-    PrintOrderLine("Office chair", 289.00m, 4);
-    PrintOrderLine("Logo sticker", 0.10m, 60);
+    Product product = new(productName, unitPrice, stockQuantity: 1_000);
+    Order order = new(WalkInCustomer);
+    order.AddItem(product, quantity);
+    PrintOrder(order);
+}
+
+static void ShowSampleOrders()                                                // ⑦
+{
+    PrintSingleLineOrder("USB-C cable", 9.99m, 3);
+    PrintSingleLineOrder("Logo sticker", 0.10m, 3);
+    PrintSingleLineOrder("Notebook A5", 19.95m, 4);
+    PrintSingleLineOrder("Desk lamp", 49.50m, 5);
+    PrintSingleLineOrder("Office chair", 289.00m, 4);
+    PrintSingleLineOrder("Logo sticker", 0.10m, 60);
 }
 
 static void ShowQuantityTable()
 {
-    const decimal PenPrice = 1.20m;
-    Console.WriteLine($"Pens at {Money(PenPrice)} each:");
+    Product pen = new("Ballpoint pen", 1.20m, stockQuantity: 500);
+    Console.WriteLine($"Pens at {Money(pen.UnitPrice)} each:");
 
-    for (int quantity = 10; quantity <= 60; quantity += 10)          // ㉑
+    for (int quantity = 10; quantity <= 60; quantity += 10)
     {
-        decimal subtotal = CalculateSubtotal(PenPrice, quantity);
-        decimal total = subtotal + CalculateVat(subtotal);
-        Console.WriteLine($"  {quantity,3} pens -> {Money(total),10}   {DecideApproval(total, quantity)}");
+        Order order = new(WalkInCustomer);
+        order.AddItem(pen, quantity);
+        decimal total = order.CalculateTotal();
+        Console.WriteLine($"  {quantity,3} pens -> {Money(total),10}   {DecideApproval(total, order.TotalQuantity)}");
     }
 }
 
@@ -275,4 +294,91 @@ static void ShowNumericTraps()
     Console.WriteLine($"7 / 2 = {7 / 2}   7m / 2 = {7m / 2}   (int)2.99m = {(int)2.99m}");
     Console.WriteLine($"Round 2.345 default: {Math.Round(2.345m, 2)}   AwayFromZero: {Math.Round(2.345m, 2, MidpointRounding.AwayFromZero)}");
 }
-Console.ReadLine(); 
+
+// ── Module 4: objects in action ─────────────────────────────────
+static void ShowMultiLineOrder()                                              // ⑧
+{
+    Product cable = new("USB-C cable", 9.99m, stockQuantity: 120);
+    Product notebook = new("Notebook A5", 19.95m, stockQuantity: 300);
+    Product lamp = new("Desk lamp", 49.50m, stockQuantity: 25);
+
+    Order order = new("Atelier Janssens");
+    order.AddItem(cable, 3);
+    order.AddItem(notebook, 4);
+    order.AddItem(lamp, 2);
+
+    PrintOrder(order);
+    order.Submit();
+    Console.WriteLine($"  After Submit(): status {order.Status}");
+}
+
+static void ShowObjectRules()                                                 // ⑨
+{
+    Product cable = new("USB-C cable", 9.99m, stockQuantity: 120);
+    Order order = new(WalkInCustomer);
+
+    Console.WriteLine("1) Add an item with quantity 0:");
+    try                                                                       // ⑩
+    {
+        order.AddItem(cable, 0);
+        Console.WriteLine("   PROBLEM: the order accepted it.");
+    }
+    catch (ArgumentOutOfRangeException ex)
+    {
+        Console.WriteLine($"   Refused by the object, as expected. Lines in the order: {order.Items.Count}  [{ex.GetType().Name}]");
+    }
+
+    Console.WriteLine("2) Submit an empty order:");
+    try
+    {
+        order.Submit();
+        Console.WriteLine("   PROBLEM: an empty order was submitted.");
+    }
+    catch (InvalidOperationException ex)
+    {
+        Console.WriteLine($"   Refused, as expected. Status is still {order.Status}  [{ex.GetType().Name}]");
+    }
+
+    Console.WriteLine("3) Set a negative price on a product:");
+    try
+    {
+        cable.UnitPrice = -5m;
+        Console.WriteLine("   PROBLEM: the product accepted a negative price.");
+    }
+    catch (ArgumentOutOfRangeException ex)
+    {
+        Console.WriteLine($"   Refused, as expected. Price is still {Money(cable.UnitPrice)}  [{ex.GetType().Name}]");
+    }
+
+    Console.WriteLine("4) Add an item after the order was submitted:");
+    order.AddItem(cable, 1);
+    order.Submit();
+    try
+    {
+        order.AddItem(cable, 1);
+        Console.WriteLine("   PROBLEM: a submitted order was changed.");
+    }
+    catch (InvalidOperationException ex)
+    {
+        Console.WriteLine($"   Refused, as expected. Lines in the order: {order.Items.Count}  [{ex.GetType().Name}]");
+    }
+}
+
+static void ShowReferencesAndValues()                                         // ⑪
+{
+    Product lamp = new("Desk lamp", 49.50m, stockQuantity: 25);
+    Product sameLamp = lamp;
+    decimal oldPrice = lamp.UnitPrice;
+
+    Order order = new(WalkInCustomer);
+    order.AddItem(lamp, 1);
+    OrderItem line = order.Items[0];
+
+    sameLamp.UnitPrice = 59.50m;
+
+    Console.WriteLine($"  Same object?            {object.ReferenceEquals(lamp, sameLamp)}");
+    Console.WriteLine($"  lamp.UnitPrice          {Money(lamp.UnitPrice)}   changed through sameLamp");
+    Console.WriteLine($"  oldPrice                {Money(oldPrice)}   a decimal is copied");
+    Console.WriteLine($"  line.UnitPrice          {Money(line.UnitPrice)}   frozen when the line was added");
+    Console.WriteLine($"  line.Product.UnitPrice  {Money(line.Product.UnitPrice)}   same Product object as lamp");
+}
