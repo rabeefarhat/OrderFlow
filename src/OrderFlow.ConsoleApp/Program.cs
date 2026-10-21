@@ -1,7 +1,9 @@
 ﻿// src/OrderFlow.ConsoleApp/Program.cs
-// OrderFlow — P01.5: an in-memory order store with LINQ search.
+// OrderFlow — P01.6: validation, exceptions and debugging.
 
+using System.Diagnostics;                                                     // ⑫
 using System.Globalization;
+using OrderFlow.ConsoleApp.Debugging;
 using OrderFlow.ConsoleApp.Models;
 using OrderFlow.ConsoleApp.Store;                                             // ①
 
@@ -12,11 +14,25 @@ const decimal ManagerThreshold = 1_000m;
 const int BulkQuantityThreshold = 50;
 const string WalkInCustomer = "Walk-in customer";
 
-// ── The program itself ──────────────────────────────────────────
-InMemoryOrderStore store = CreateSampleStore();                               // ②
-PrintWelcome();
-RunMenu(store);
-Console.WriteLine("Goodbye from OrderFlow.");
+// ── The program itself, inside a last-resort safety net ─────────
+try                                                                           // ⑬
+{
+    InMemoryOrderStore store = CreateSampleStore();                           // ②
+    PrintWelcome();
+    RunMenu(store);
+}
+catch (Exception ex)
+{
+    // Anything that reaches here is a bug we did not expect. Tell the user
+    // kindly, keep the details for the developer, and stop rather than carry on.
+    Console.WriteLine("Sorry - OrderFlow hit an unexpected problem and has to close.");
+    Debug.WriteLine($"Unhandled exception: {ex}");
+    Environment.ExitCode = 1;
+}
+finally
+{
+    Console.WriteLine("Goodbye from OrderFlow.");                             // ⑭
+}
 
 // ── Menu ────────────────────────────────────────────────────────
 static void RunMenu(InMemoryOrderStore store)                                 // ③
@@ -30,44 +46,73 @@ static void RunMenu(InMemoryOrderStore store)                                 //
             return;
         }
 
-        switch (line.Trim())
+        string choice = line.Trim();
+        if (choice == "0")
         {
-            case "1":
-                PriceNewOrderLine();
-                break;
-            case "2":
-                ShowSampleOrders();
-                break;
-            case "3":
-                ShowQuantityTable();
-                break;
-            case "4":
-                ShowNumericTraps();
-                break;
-            case "5":
-                ShowMultiLineOrder();
-                break;
-            case "6":
-                ShowObjectRules();
-                break;
-            case "7":
-                ShowReferencesAndValues();
-                break;
-            case "8":
-                SearchCustomerOrders(store);
-                break;
-            case "9":
-                ShowStoreReport(store);
-                break;
-            case "0":
-                return;
-            default:
-                Console.WriteLine($"  Rejected: '{line.Trim()}' is not a menu option. Type one of the numbers above.");
-                break;
+            return;
+        }
+
+        try                                                                   // ⑮
+        {
+            RunOption(choice, store);
+        }
+        catch (ArgumentException ex)
+        {
+            ReportProblem(choice, ex);
+        }
+        catch (InvalidOperationException ex)
+        {
+            ReportProblem(choice, ex);
         }
 
         Console.WriteLine();
     }
+}
+
+static void RunOption(string choice, InMemoryOrderStore store)                // ⑯
+{
+    switch (choice)
+    {
+        case "1":
+            PriceNewOrderLine();
+            break;
+        case "2":
+            ShowSampleOrders();
+            break;
+        case "3":
+            ShowQuantityTable();
+            break;
+        case "4":
+            ShowNumericTraps();
+            break;
+        case "5":
+            ShowMultiLineOrder();
+            break;
+        case "6":
+            ShowObjectRules();
+            break;
+        case "7":
+            ShowReferencesAndValues();
+            break;
+        case "8":
+            SearchCustomerOrders(store);
+            break;
+        case "9":
+            ShowStoreReport(store);
+            break;
+        case "10":
+            ShowVolumeDiscountExercise();
+            break;
+        default:
+            Console.WriteLine($"  Rejected: '{choice}' is not a menu option. Type one of the numbers above.");
+            break;
+    }
+}
+
+static void ReportProblem(string choice, Exception ex)                        // ⑰
+{
+    Console.WriteLine($"  Option {choice} stopped because of an internal problem. The menu still works.");
+    Debug.WriteLine($"Option {choice} failed: {ex}");
 }
 
 static void PrintMenu()
@@ -83,6 +128,7 @@ static void PrintMenu()
         "7  References vs values",
         "8  Search a customer's orders",
         "9  Store report (sorted, grouped, by status)",
+        "10 Debugging exercise: volume discount",
         "0  Exit",
     ];
 
@@ -192,7 +238,10 @@ static int? ReadQuantity()
 
         if (!int.TryParse(input, NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture, out int quantity))
         {
-            Console.WriteLine($"  Rejected: '{input}' is not a whole number.");
+            string reason = IsWholeNumberText(input)                          // ⑱
+                ? $"'{input}' is outside the allowed range {OrderItem.MinQuantity} to {OrderItem.MaxQuantity}."
+                : $"'{input}' is not a whole number.";
+            Console.WriteLine($"  Rejected: {reason}");
             continue;
         }
 
@@ -204,6 +253,13 @@ static int? ReadQuantity()
 
         Console.WriteLine($"  Rejected: {error}");
     }
+}
+
+// Digits with an optional sign: a whole number, even if too big for an int.
+static bool IsWholeNumberText(string text)                                    // ⑲
+{
+    string digits = text.StartsWith('+') || text.StartsWith('-') ? text[1..] : text;
+    return digits.Length > 0 && digits.All(char.IsAsciiDigit);
 }
 
 // ── Boundary rules: friendly messages, limits owned by the classes ─
@@ -245,7 +301,7 @@ static void PrintWelcome()
 {
     Console.WriteLine("Welcome to OrderFlow!");
     Console.WriteLine("Order management, built one lesson at a time.");
-    Console.WriteLine("Version: L01 Module 5");
+    Console.WriteLine("Version: L01 Module 6");
     Console.WriteLine();
 }
 
@@ -494,3 +550,29 @@ static void ShowStoreReport(InMemoryOrderStore store)                         //
 
 static void PrintOrderSummaryLine(Order order) =>
     Console.WriteLine($"  {order.CustomerName,-20} {order.Status,-10} {order.Items.Count} line(s) {Money(order.CalculateTotal()),12}");
+
+// ── Module 6: the debugging exercise ────────────────────────────
+static void ShowVolumeDiscountExercise()                                      // ⑳
+{
+    Product pen = new("Ballpoint pen", 1.20m, stockQuantity: 500);
+    Product notebook = new("Notebook A5", 19.95m, stockQuantity: 300);
+    Product cable = new("USB-C cable", 9.99m, stockQuantity: 120);
+
+    Order order = new("Bakkerij Peeters");
+    order.AddItem(pen, 20);
+    order.AddItem(notebook, 4);
+    order.AddItem(cable, 3);
+
+    // Worked out by hand: 24,00 - 1,20 + 79,80 + 29,97. A local, not a const,
+    // so it shows up in the Locals window.
+    decimal expected = 132.57m;
+    decimal calculated = VolumeDiscount.CalculateDiscountedSubtotal(order);
+    bool matches = calculated == expected;
+
+    Console.WriteLine($"Volume discount: {VolumeDiscount.Rate * 100:0}% off any line with {VolumeDiscount.MinimumQuantity} or more items (excl. VAT).");
+    Console.WriteLine($"  Expected (worked out by hand): {Money(expected)}");
+    Console.WriteLine($"  Calculated by the code:        {Money(calculated)}");
+    Console.WriteLine(matches
+        ? "  MATCH - the calculation is correct."
+        : "  MISMATCH - debug VolumeDiscount.CalculateDiscountedSubtotal.");
+}
